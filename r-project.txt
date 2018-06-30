@@ -1,0 +1,411 @@
+########################################################################
+
+#Packages used in the project
+
+########################################################################
+
+library(RODBC)
+
+library(sqldf)
+
+library(dplyr)
+
+library(xlsx)
+
+library(readxl)
+
+library(tidyverse)
+
+library(ggplot2)
+
+ 
+
+########################################################################
+
+#Read Data into R
+
+########################################################################
+
+ 
+
+order1 <- read_xlsx("C /global_superstore_2016.xlsx", sheet = 1, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+order2 <- read_xlsx("C /global_superstore_2016.xlsx", sheet = 2, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+order3 <- read_xlsx("C /global_superstore_2016.xlsx ", sheet = 3, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+order4 <- read_xlsx("C /global_superstore_2016.xlsx ", sheet = 4, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+returns <- read_xlsx("C /global_superstore_2016.xlsx ", sheet = 5, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+people <- read_xlsx("C /global_superstore_2016.xlsx ", sheet = 6, col_names = TRUE, col_types = NULL, na = "", skip = 0)
+
+ 
+
+#Union the orders
+
+combined_Order <- union(order1,order2,order3,order4)
+
+ 
+
+#Remove duplicates
+
+returns <- distinct(returns)
+
+ 
+
+people <- distinct(people)
+
+ 
+
+########################################################################
+
+#Data Cleaning and Preparation
+
+########################################################################
+
+ 
+
+#Split Name into First and Last name column
+
+combined_Order2 <- combined_Order %>%
+
+  separate(CustomerName , c("FirstName","LastName"), sep = ' ')
+
+ 
+
+#Creating a state column in returns
+
+returns$State <- substr(returns$OrderID, 1, 2)
+
+ 
+
+#Extracting year from date
+
+combined_Order2$year <- as.numeric(format(combined_Order2$OrderDate,'%Y'))
+
+ 
+
+#Case statement R
+
+combined_Order2$flag <- case_when(
+
+  combined_Order2$Profit <= 0 & combined_Order2$`OrderPriority` == "Critical" ~ "Y",
+
+  TRUE ~ "N")
+
+ 
+
+#Concatenate function
+
+combined_Order2$Comnined_cat <- paste(combined_Order2$Category,', ',combined_Order2$SubCategory)
+
+ 
+
+#date difference
+
+combined_Order2$date_diff <- difftime(combined_Order2$`ShipDate`, combined_Order2$`OrderDate`, units = "days")
+
+ 
+
+#add days
+
+combined_Order2$add_Days <- as.Date(combined_Order2$`ShipDate`) + 30
+
+combined_Order2$ShipDate <- as.Date(combined_Order2$`ShipDate`, "%y/%m/%d")
+
+ 
+
+#############################################################################
+
+#Joins
+
+#############################################################################
+
+ 
+
+combined_Order2 <- left_join(combined_Order2, people)
+
+combined_Order2 <- left_join(combined_Order2, returns, by="OrderID")
+
+ 
+
+#############################################################################
+
+#group by
+
+#############################################################################
+
+ 
+
+order_year_grp1 <- combined_Order2 %>%
+
+  group_by(year) %>%
+
+  summarise(
+
+    sumsales = sum(Sales),
+
+    meanprofit = mean(Profit)
+
+  )
+
+ 
+
+#Analyzing the 10 maximum products sold
+
+order_prod_grp2 <- combined_Order2 %>%
+
+  group_by(ProductName) %>%
+
+  summarise(
+
+    totalquantity = sum(Quantity))
+
+ 
+
+#Sorting the order by quantity and selecting the top 10 records
+
+order_prod_grp2 <- arrange(order_prod_grp2,desc(totalquantity)) %>% top_n(10)
+
+ 
+
+############################################################################
+
+#lag function
+
+#############################################################################
+
+ 
+
+order_year_grp1$lead_sumsales <- lead(order_year_grp1$sumsales, 1)
+
+order_year_grp1$lag_sumsales <- lag(order_year_grp1$sumsales, 1)
+
+ 
+
+order_year_grp1$PercentChange <- (order_year_grp1$sumsales-order_year_grp1$lag_sumsales)*100/order_year_grp1$sumsales
+
+ 
+
+############################################################################
+
+#Visualization
+
+############################################################################
+
+ 
+
+#scatterplot
+
+ggplot(data=combined_Order2, aes(y=Sales,x=Profit, shape=ShipMode, col=ShipMode))+geom_point()
+
+ggplot(data = combined_Order2, mapping = aes(x = (combined_Order2$Profit), y = (combined_Order2$Sales))) +
+
+  geom_point(alpha = 0.1, aes(color = combined_Order2$Category))
+
+ 
+
+ 
+
+#histogram
+
+ggplot(data=combined_Order2, aes(x=Sales))+geom_histogram(bins = 10, fill="palegreen4", col="green")
+
+#histogram changing asthetic
+
+ggplot(data=combined_Order2, aes(x=Profit, fill=Segment))+geom_histogram(position = "fill")
+
+ 
+
+#Bar-plot
+
+ggplot(data=combined_Order2, aes(x=Quantity))+geom_bar()
+
+ 
+
+ggplot(data=combined_Order2, aes(x=Quantity, fill= Category))+geom_bar(position = "fill")
+
+ 
+
+#frequency polygon (used to see the distribution of continuous variable)
+
+ggplot(data=combined_Order2, aes(x=Profit))+geom_freqpoly(bins = 60)
+
+ggplot(data=combined_Order2, aes(x=Profit))+geom_freqpoly(bins = 2000)
+
+ggplot(data=combined_Order2, aes(x=Profit, col=Category))+geom_freqpoly(bins = 60)
+
+ 
+
+#Box-plot
+
+#it shows how continuous variable change with respect to categorical variable, y is continuous and x is categorical
+
+ggplot(data=combined_Order2, aes(x=factor(Quantity), y=Profit))+geom_boxplot()
+
+ggplot(data=combined_Order2, aes(x=factor(Quantity), y=Profit, fill=factor(Quantity)))+geom_boxplot()
+
+ggplot(data=combined_Order2, aes(x=factor(Quantity), y=Profit, fill=Category))+geom_boxplot()
+
+ 
+
+#Smooth-line
+
+#how one continuous variable change wrt another continuous variable
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit))+geom_smooth()
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit, col=Category))+geom_smooth(se=F)
+
+#se=F removes the error (the grayed out area)
+
+ 
+
+#meathod="lm"
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit))+geom_point()+geom_smooth(meathod="lm",se=F)
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit, col=Category))+geom_point()+geom_smooth(meathod="lm",se=F)
+
+ 
+
+#Faceting
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit, col=Category))+geom_point()+geom_smooth(meathod="lm",se=F)+facet_grid(~Category)
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit, col=factor(Quantity)))+geom_point()+geom_smooth(meathod="lm",se=F)+facet_grid(~factor(Quantity))
+
+ 
+
+#Theme-1
+
+ggplot(data=combined_Order2, aes(x=factor(Quantity), y=Profit, fill=factor(Quantity)))+geom_boxplot()-> obj1
+
+obj1
+
+obj1 + labs(title="Quantity wrt Profit", x="Quantity", fill="Quantity") -> obj2
+
+obj2 + theme(panel.background = element_rect(fill="palegreen1")) -> obj3
+
+obj3 + theme(plot.title = element_text(hjust = 0.5,face = "bold",colour = "cadetblue")) -> obj4
+
+obj4 + scale_y_continuous(labels = dollar)
+
+obj4
+
+ 
+
+#Theme-2
+
+ggplot(data=combined_Order2, aes(x=Sales, y=Profit, col=Category))+geom_point()+geom_smooth(meathod="lm",se=F)+facet_grid(~Category) -> g1
+
+g1+theme(panel.background = element_rect(fill = "lemonchiffon2")) -> g2
+
+g2+theme(legend.background = element_rect(fill = "lightcyan4"))->g3
+
+g3+theme(plot.background = element_rect(fill = "lightcoral")) -> g4
+
+g4
+
+ 
+
+#Theme-3
+
+ggplot(data=combined_Order2, aes(x=Profit, col=Category))+geom_freqpoly(size=0.5,bins = 60) -> p1
+
+p1 + theme(panel.background = element_rect(fill = "peachpuff")) -> p2
+
+p2 + labs(title="Profit for category")-> p3
+
+p3 + theme(plot.title = element_text(hjust = 0.5),plot.background = element_rect("aquamarine4")) -> p4
+
+p4
+
+ 
+
+############################################################################
+
+#Regression
+
+############################################################################
+
+ 
+
+##Sample the dataset. Devide the dataset into training and test datasets
+
+set.seed(1)
+
+row.number <- sample(1:nrow(combined_Order2), 0.8*nrow(combined_Order2))
+
+train = combined_Order2[row.number,]
+
+test = combined_Order2[-row.number,]
+
+dim(train)
+
+dim(test)
+
+ 
+
+##Explore the data
+
+ggplot(train, aes(Profit)) + geom_density(fill="blue")
+
+ggplot(train, aes(log(Profit))) + geom_density(fill="blue")
+
+ggplot(train, aes(sqrt(Profit))) + geom_density(fill="blue")
+
+ 
+
+#Model
+
+model1 = lm(Profit~Sales+Quantity+Discount+ShippingCost, data=train)
+
+summary(model1)
+
+par(mfrow=c(2,2))
+
+plot(model1)
+
+ 
+
+#remove the less significant feature
+
+model2 = update(model1, ~.-ShippingCost-Discount)
+
+summary(model2)
+
+plot(model2)
+
+ 
+
+#compare two models
+
+anova(model1,model2)
+
+ 
+
+#predict values of the test data
+
+pred1 <- predict(model2, newdata = test)
+
+print(pred1)
+
+summary(pred1)
+
+ 
+
+rmse <- sqrt(sum((exp(pred1) - test$Profit)^2)/length(test$Profit))
+
+c(RMSE = rmse, R2=summary(model2)$r.squared)
